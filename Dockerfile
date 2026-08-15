@@ -17,6 +17,7 @@ RUN apt-get update \
         libxdamage1 \
         libxrandr2 \
         xvfb \
+        xauth \
         xdg-utils \
     && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
         | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
