@@ -16,17 +16,19 @@ Until a Linux browser session is seeded successfully once, scheduled runs will f
 
 ## First successful Linux session
 
-Pick one:
+SSH has no display; `./deploy/hassvm-run.sh` automatically uses Docker (Google Chrome + xvfb) unless you set `HATTRICK_NATIVE=1`.
 
-1. From a machine with a desktop, SSH with X11 forwarding and run:
+```bash
+cd ~/projects/hattrick-login
+git pull
+./deploy/hassvm-run.sh --keepalive --visible --debug
+```
 
-   ```bash
-   ssh -X hassvm
-   cd ~/projects/hattrick-login
-   ./deploy/hassvm-run.sh --keepalive --visible --debug
-   ```
+That runs inside Docker with a virtual display. Force broken host snap Chromium only if you really want native:
 
-2. Keep using your Windows session on a biweekly Task Scheduler job as the primary keepalive until hassvm login succeeds once.
+```bash
+HATTRICK_NATIVE=1 ./deploy/hassvm-run.sh --keepalive --visible --debug
+```
 
 After one successful Linux login, Docker headless runs should reuse `/data/session` in the `hattrick-login_hattrick-session` volume.
 

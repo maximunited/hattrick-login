@@ -7,6 +7,7 @@ import os
 import platform
 import random
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -112,6 +113,22 @@ class LoginResult:
     title: str = ""
 
 
+def detect_chrome_binary() -> str | None:
+    override = os.getenv("HATTRICK_CHROME_BINARY", "").strip()
+    if override:
+        return override
+    for binary in (
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium-browser",
+        "chromium",
+    ):
+        path = shutil.which(binary)
+        if path:
+            return path
+    return None
+
+
 def build_chrome_options(user_data_dir: Path, headless: bool) -> uc.ChromeOptions:
     options = uc.ChromeOptions()
     options.add_argument(f"--user-data-dir={user_data_dir}")
@@ -127,11 +144,17 @@ def build_chrome_options(user_data_dir: Path, headless: bool) -> uc.ChromeOption
 def start_browser(user_data_dir: Path, headless: bool, debug: bool = False) -> WebDriver:
     options = build_chrome_options(user_data_dir, headless=headless)
     version_main = detect_chrome_version_main()
+    chrome_binary = detect_chrome_binary()
     kwargs: dict[str, object] = {"options": options, "use_subprocess": True}
     if version_main is not None:
         kwargs["version_main"] = version_main
+    if chrome_binary is not None:
+        kwargs["browser_executable_path"] = chrome_binary
     if debug:
-        print(f"Starting Chrome (headless={headless}, version_main={version_main})")
+        print(
+            "Starting Chrome "
+            f"(headless={headless}, version_main={version_main}, binary={chrome_binary})"
+        )
     driver = uc.Chrome(**kwargs)
     driver.set_window_size(1920, 1080)
     return driver

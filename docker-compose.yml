@@ -7,8 +7,7 @@ services:
     environment:
       HATTRICK_SESSION_DIR: /data/session
     volumes:
-      - hattrick-session:/data/session
+      - type: bind
+        source: ${HATTRICK_SESSION_DIR:-/home/maxim/.hattrick-session}
+        target: /data/session
     shm_size: "2gb"
-
-volumes:
-  hattrick-session:
