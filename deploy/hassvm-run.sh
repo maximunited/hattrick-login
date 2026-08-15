@@ -65,7 +65,21 @@ export HATTRICK_CHROME_BINARY="${HATTRICK_CHROME_BINARY:-/usr/bin/chromium-brows
 
 if [[ -z "${DISPLAY:-}" ]]; then
   ensure_xvfb
-  exec xvfb-run -a "${repo}/run.sh" "$@"
+  args=()
+  for arg in "$@"; do
+    if [[ "${arg}" == "--headless" ]]; then
+      continue
+    fi
+    args+=("${arg}")
+  done
+  has_keepalive=false
+  for arg in "${args[@]}"; do
+    [[ "${arg}" == "--keepalive" ]] && has_keepalive=true
+  done
+  if [[ "${has_keepalive}" == "true" ]]; then
+    exec xvfb-run -a "${repo}/run.sh" --keepalive --visible "${args[@]}"
+  fi
+  exec xvfb-run -a "${repo}/run.sh" "${args[@]}"
 fi
 
 cd "${repo}"
