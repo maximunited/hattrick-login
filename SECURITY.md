@@ -18,3 +18,5 @@ Include steps to reproduce, affected versions, and impact if known. You should r
 ## Sensitive Data
 
 Never commit `.env`, browser profiles, cookie exports, or keepalive logs. This repository ships `.env.example` only.
+
+Operational security guidance: [docs/security.md](docs/security.md)

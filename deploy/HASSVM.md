@@ -1,5 +1,9 @@
 # hassvm deployment notes
 
+Detailed deployment guide: [docs/deployment.md](../docs/deployment.md)
+
+Troubleshooting: [docs/troubleshooting.md](../docs/troubleshooting.md)
+
 ## What is installed
 
 - Repo: `~/projects/hattrick-login`

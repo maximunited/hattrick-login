@@ -19,6 +19,7 @@ from hattrick_client import (
     get_session_dir,
     is_first_run,
     browser_login,
+    restrict_private_file,
     save_cookies_snapshot,
 )
 from hattrick_notify import notify_keepalive
@@ -53,6 +54,7 @@ def record_keepalive(*, ok: bool, message: str, exit_code: int) -> None:
     path = session_dir / "keepalive.jsonl"
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    restrict_private_file(path)
     print(f"Logged keepalive run to {path}")
 
 

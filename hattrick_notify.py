@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import os
+import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+
+DEFAULT_NTFY_SERVER = "https://ntfy.sh"
+_ALLOWED_NTFY_SCHEMES = frozenset({"https", "http"})
+_UNSAFE_TOPIC = re.compile(r"[\s/\\?#@:%]")
 
 
 @dataclass(frozen=True)
@@ -15,11 +21,43 @@ class NtfyConfig:
     token: str | None = None
 
 
+def sanitize_ntfy_server(raw: str) -> str:
+    """Return a safe ntfy base URL or the default public server."""
+    candidate = raw.strip().rstrip("/") or DEFAULT_NTFY_SERVER
+    parsed = urllib.parse.urlparse(candidate)
+    if parsed.scheme not in _ALLOWED_NTFY_SCHEMES or not parsed.hostname:
+        return DEFAULT_NTFY_SERVER
+    if parsed.username or parsed.password:
+        return DEFAULT_NTFY_SERVER
+    if parsed.path not in ("", "/"):
+        return DEFAULT_NTFY_SERVER
+    if parsed.params or parsed.query or parsed.fragment:
+        return DEFAULT_NTFY_SERVER
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def sanitize_ntfy_topic(raw: str) -> str:
+    """Return a topic safe for path construction, or empty when invalid."""
+    topic = raw.strip()
+    if not topic or _UNSAFE_TOPIC.search(topic):
+        return ""
+    return topic
+
+
+def build_ntfy_url(server: str, topic: str) -> str:
+    base = server.rstrip("/") + "/"
+    return urllib.parse.urljoin(base, urllib.parse.quote(topic, safe="-_."))
+
+
 def get_ntfy_config() -> NtfyConfig | None:
-    topic = os.getenv("HATTRICK_NTFY_TOPIC", os.getenv("NTFY_TOPIC", "")).strip()
+    topic = sanitize_ntfy_topic(
+        os.getenv("HATTRICK_NTFY_TOPIC", os.getenv("NTFY_TOPIC", ""))
+    )
     if not topic:
         return None
-    server = os.getenv("HATTRICK_NTFY_SERVER", os.getenv("NTFY_SERVER", "https://ntfy.sh")).rstrip("/")
+    server = sanitize_ntfy_server(
+        os.getenv("HATTRICK_NTFY_SERVER", os.getenv("NTFY_SERVER", DEFAULT_NTFY_SERVER))
+    )
     token = os.getenv("HATTRICK_NTFY_TOKEN", os.getenv("NTFY_TOKEN", "")).strip() or None
     return NtfyConfig(server=server, topic=topic, token=token)
 
@@ -51,7 +89,7 @@ def notify_keepalive(
         headers["Authorization"] = f"Bearer {config.token}"
 
     request = urllib.request.Request(
-        f"{config.server}/{config.topic}",
+        build_ntfy_url(config.server, config.topic),
         data=body.encode("utf-8"),
         headers=headers,
         method="POST",

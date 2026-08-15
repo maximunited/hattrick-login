@@ -1,0 +1,23 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+  "--strict-markers",
+  "--cov=hattrick_client",
+  "--cov=hattrick_login",
+  "--cov=hattrick_notify",
+  "--cov-report=term-missing:skip-covered",
+  "--cov-fail-under=90",
+]
+
+[tool.coverage.run]
+branch = true
+omit = [
+  "legacy/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+]

@@ -12,6 +12,19 @@ Hattrick is behind Cloudflare now. The old `requests`-only scripts in `legacy/` 
 
 Hattrick deletes inactive teams after about **7 weeks without a website login**. This tool is meant to keep that from happening.
 
+## Documentation
+
+| Guide | Description |
+| ----- | ----------- |
+| [Architecture](docs/architecture.md) | Components and login flow |
+| [Configuration](docs/configuration.md) | Environment variables and CLI flags |
+| [Deployment](docs/deployment.md) | Windows, hassvm, Docker, systemd, cron |
+| [Security](docs/security.md) | Secrets, hardening, and recovery |
+| [Troubleshooting](docs/troubleshooting.md) | Common failures and fixes |
+| [Operations](docs/operations.md) | Logs, schedules, and maintenance |
+
+Full index: [docs/README.md](docs/README.md)
+
 ## Setup
 
 ```bash
@@ -153,6 +166,8 @@ The original hassvm scripts are kept under `legacy/` for reference. They are san
 pip install -r requirements-dev.txt
 pytest
 ```
+
+Coverage threshold is 90% (`pyproject.toml`). The suite mocks browser and network boundaries — no real Chrome or Hattrick access during tests.
 
 ## License
 

@@ -36,6 +36,14 @@ DEFAULT_USER_AGENT = (
 )
 
 
+def restrict_private_file(path: Path) -> None:
+    """Best-effort owner-only permissions for secrets written to disk."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def get_session_dir() -> Path:
     override = os.getenv("HATTRICK_SESSION_DIR")
     if override:
@@ -365,6 +373,7 @@ def save_cookies_snapshot(session: requests.Session, path: Path) -> None:
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
+    restrict_private_file(path)
 
 
 def load_cookies_snapshot(path: Path) -> requests.Session:
