@@ -1,0 +1,2 @@
+# Twice monthly keepalive (1st and 15th, 09:00). Adjust path/topic as needed.
+0 9 1,15 * * cd /home/maxim/projects/hattrick-login && ./run.sh --keepalive --headless >> /home/maxim/.local/share/hattrick-login/cron.log 2>&1

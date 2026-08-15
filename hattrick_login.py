@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from hattrick_client import (
@@ -19,6 +21,7 @@ from hattrick_client import (
     browser_login,
     save_cookies_snapshot,
 )
+from hattrick_notify import notify_keepalive
 
 try:
     from dotenv import load_dotenv
@@ -36,6 +39,21 @@ EXIT_NEEDS_HUMAN = 2
 
 def get_credentials() -> tuple[str | None, str | None]:
     return os.getenv("HATTRICK_USERNAME"), os.getenv("HATTRICK_PASSWORD")
+
+
+def record_keepalive(*, ok: bool, message: str, exit_code: int) -> None:
+    session_dir = get_session_dir()
+    session_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "ok": ok,
+        "exit_code": exit_code,
+        "message": message,
+    }
+    path = session_dir / "keepalive.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    print(f"Logged keepalive run to {path}")
 
 
 def run_login_flow(
@@ -115,11 +133,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Hattrick team ID for finances fetch (overrides HATTRICK_TEAM_ID)",
     )
     parser.add_argument(
+        "--keepalive",
+        action="store_true",
+        help="Login and verify dashboard access (for schedulers)",
+    )
+    parser.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="Disable ntfy notifications even when configured",
+    )
+    parser.add_argument(
         "--save-cookies",
         action="store_true",
         help="Write exported cookies to the session directory",
     )
     return parser
+
+
+def notify_result(*, exit_code: int, message: str, debug: bool, enabled: bool) -> None:
+    if not enabled:
+        return
+    notify_keepalive(
+        success=exit_code == EXIT_OK,
+        message=message,
+        exit_code=exit_code,
+        debug=debug,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -141,13 +180,33 @@ def main(argv: list[str] | None = None) -> int:
             print("Future runs will default to headless using the saved browser profile.")
 
     team_id = args.team_id or os.getenv("HATTRICK_TEAM_ID")
-    return run_login_flow(
+    fetch = "dashboard" if args.keepalive else args.fetch
+    if args.keepalive and args.fetch and args.fetch != "dashboard":
+        print("WARNING: --keepalive forces dashboard verification")
+
+    exit_code = run_login_flow(
         headless=headless,
         debug=args.debug,
-        fetch=args.fetch,
+        fetch=fetch,
         team_id=team_id,
         save_cookies=args.save_cookies,
     )
+
+    message = {
+        EXIT_OK: "Dashboard verified; account keepalive succeeded.",
+        EXIT_NEEDS_HUMAN: "Needs visible browser or Cloudflare clearance. Rerun with --visible.",
+    }.get(exit_code, "Keepalive failed. Check logs and rerun with --debug.")
+
+    if args.keepalive:
+        record_keepalive(ok=exit_code == EXIT_OK, message=message, exit_code=exit_code)
+
+    notify_result(
+        exit_code=exit_code,
+        message=message,
+        debug=args.debug,
+        enabled=not args.no_notify,
+    )
+    return exit_code
 
 
 if __name__ == "__main__":

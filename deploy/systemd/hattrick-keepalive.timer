@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Hattrick keepalive every 14 days
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=14d
+Persistent=true
+Unit=hattrick-keepalive.service
+
+[Install]
+WantedBy=timers.target
