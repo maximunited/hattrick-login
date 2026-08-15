@@ -18,5 +18,11 @@ if [[ ! -f "${lib_dir}/libnspr4.so" ]]; then
   rm -rf "${tmp}"
 fi
 
+if [[ ! -f "${HOME}/.hattrick-session/Default/Network/Cookies" && ! -f "${HOME}/.hattrick-session/Default/Cookies" ]]; then
+  if command -v xvfb-run >/dev/null 2>&1; then
+    exec xvfb-run -a "${repo}/run.sh" --keepalive --visible "$@"
+  fi
+fi
+
 cd "${repo}"
 exec ./run.sh "$@"

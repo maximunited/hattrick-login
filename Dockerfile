@@ -16,6 +16,7 @@ RUN apt-get update \
         libxcomposite1 \
         libxdamage1 \
         libxrandr2 \
+        xvfb \
         xdg-utils \
     && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
         | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
@@ -31,8 +32,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY hattrick_client.py hattrick_login.py hattrick_notify.py ./
+COPY deploy/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV HATTRICK_SESSION_DIR=/data/session
 VOLUME ["/data/session"]
 
-CMD ["python", "hattrick_login.py", "--keepalive", "--headless"]
+ENTRYPOINT ["/entrypoint.sh"]
