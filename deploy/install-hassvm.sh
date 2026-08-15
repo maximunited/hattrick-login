@@ -18,6 +18,7 @@ fi
 
 # Replace ExecStart to use docker keepalive container
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+mkdir -p "${unit_dir}"
 cat >"${unit_dir}/hattrick-keepalive.service" <<EOF
 [Unit]
 Description=Hattrick keepalive login (Docker)
