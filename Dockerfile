@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12-bookworm
+FROM python:3.14-bookworm
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
