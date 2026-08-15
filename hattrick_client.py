@@ -129,6 +129,23 @@ def detect_chrome_binary() -> str | None:
     return None
 
 
+def cleanup_stale_chrome_locks(user_data_dir: Path) -> None:
+    for relative in (
+        "SingletonLock",
+        "SingletonSocket",
+        "SingletonCookie",
+        "Default/SingletonLock",
+        "Default/SingletonSocket",
+        "Default/SingletonCookie",
+    ):
+        path = user_data_dir / relative
+        try:
+            if path.exists() or path.is_symlink():
+                path.unlink()
+        except OSError:
+            pass
+
+
 def build_chrome_options(user_data_dir: Path, headless: bool) -> uc.ChromeOptions:
     options = uc.ChromeOptions()
     options.add_argument(f"--user-data-dir={user_data_dir}")
@@ -142,6 +159,7 @@ def build_chrome_options(user_data_dir: Path, headless: bool) -> uc.ChromeOption
 
 
 def start_browser(user_data_dir: Path, headless: bool, debug: bool = False) -> WebDriver:
+    cleanup_stale_chrome_locks(user_data_dir)
     options = build_chrome_options(user_data_dir, headless=headless)
     version_main = detect_chrome_version_main()
     chrome_binary = detect_chrome_binary()

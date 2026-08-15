@@ -16,19 +16,24 @@ Until a Linux browser session is seeded successfully once, scheduled runs will f
 
 ## First successful Linux session
 
-SSH has no display; `./deploy/hassvm-run.sh` automatically uses Docker (Google Chrome + xvfb) unless you set `HATTRICK_NATIVE=1`.
+Use X11 to your desktop once to seed the Linux profile:
 
 ```bash
+export DISPLAY=your-windows-ip:0.0   # VcXsrv / X410 / etc.
 cd ~/projects/hattrick-login
-git pull
 ./deploy/hassvm-run.sh --keepalive --visible --debug
 ```
 
-That runs inside Docker with a virtual display. Force broken host snap Chromium only if you really want native:
+## Headless / scheduled runs
+
+After the profile exists, headless uses the same native Chromium under xvfb (not Docker):
 
 ```bash
-HATTRICK_NATIVE=1 ./deploy/hassvm-run.sh --keepalive --visible --debug
+unset DISPLAY
+./deploy/hassvm-run.sh --keepalive --headless --debug
 ```
+
+Docker is optional (`HATTRICK_USE_DOCKER=1`) but not recommended — root in the container fights the user-owned Chrome profile.
 
 After one successful Linux login, Docker headless runs should reuse `/data/session` in the `hattrick-login_hattrick-session` volume.
 
