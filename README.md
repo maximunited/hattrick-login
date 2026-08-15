@@ -1,5 +1,7 @@
 # Hattrick Login
 
+[![ci](https://github.com/maximunited/hattrick-login/actions/workflows/ci.yml/badge.svg)](https://github.com/maximunited/hattrick-login/actions/workflows/ci.yml)
+
 Automates login to [Hattrick.org](https://www.hattrick.org/) and can fetch authenticated pages after login.
 
 Migrated from the personal scripts that lived on `hassvm` at `~/scripts/hattrick_login/`.
@@ -151,3 +153,13 @@ The original hassvm scripts are kept under `legacy/` for reference. They are san
 pip install -r requirements-dev.txt
 pytest
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Community
+
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)

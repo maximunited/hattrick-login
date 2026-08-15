@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a keepalive/login failure or deployment problem
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Redact credentials, `.env` contents, and session directory paths.
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Windows (local)
+        - hassvm (native / X11)
+        - hassvm (Docker keepalive)
+        - Other Linux
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command run
+      placeholder: ./deploy/hassvm-run.sh --keepalive --headless --debug
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exit code, error message, and relevant log lines.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for duplicates
+          required: true
+        - label: I removed secrets from the report
+          required: true
