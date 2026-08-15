@@ -6,6 +6,10 @@ services:
         required: true
     environment:
       HATTRICK_SESSION_DIR: /data/session
+      HATTRICK_CHROME_BINARY: /usr/bin/google-chrome-stable
+      HOME: /tmp/chrome-home
+      TMPDIR: /tmp
+      PYTHONUNBUFFERED: "1"
     volumes:
       - type: bind
         source: ${HATTRICK_SESSION_DIR:-/home/maxim/.hattrick-session}

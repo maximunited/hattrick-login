@@ -5,14 +5,14 @@
 - Repo: `~/projects/hattrick-login`
 - Env: `~/projects/hattrick-login/.env`
 - ntfy topic: `malter_hattrick`
-- systemd user timer: every 14 days via Docker
+- systemd user timer: every 14 days
 - crontab safety net: 1st and 15th at 09:00
 
 ## Cloudflare caveat
 
-Hattrick blocks headless/server logins from hassvm. FlareSolverr (already on `:8191`) also timed out on the challenge.
+Hattrick blocks true headless Chrome from hassvm. Scheduled runs use **visible Chrome under xvfb** inside Docker (Google Chrome, not snap Chromium).
 
-Until a Linux browser session is seeded successfully once, scheduled runs will fail and ntfy will alert you.
+FlareSolverr (already on `:8191`) also timed out on the challenge.
 
 ## First successful Linux session
 
@@ -24,27 +24,37 @@ cd ~/projects/hattrick-login
 ./deploy/hassvm-run.sh --keepalive --visible --debug
 ```
 
-## Headless / scheduled runs
+That uses native snap Chromium with your real display.
 
-After the profile exists, headless uses the same native Chromium under xvfb (not Docker):
+## Scheduled / unattended runs
+
+When `DISPLAY` is unset, `deploy/hassvm-run.sh` runs Docker as your uid with the profile bind-mounted:
 
 ```bash
 unset DISPLAY
 ./deploy/hassvm-run.sh --keepalive --headless --debug
 ```
 
-Docker is optional (`HATTRICK_USE_DOCKER=1`) but not recommended — root in the container fights the user-owned Chrome profile.
+The `--headless` flag is kept for systemd/cron compatibility; the container still launches visible Chrome under xvfb so Cloudflare accepts the session.
 
-After one successful Linux login, Docker headless runs should reuse `/data/session` in the `hattrick-login_hattrick-session` volume.
+Force native snap Chromium (Docker unavailable or `HATTRICK_NATIVE=1`; uses visible Chrome under xvfb):
+
+```bash
+HATTRICK_NATIVE=1 ./deploy/hassvm-run.sh --keepalive --headless --debug
+```
 
 ## Commands
 
 ```bash
-# manual run
+# manual run (same path as timer)
 cd ~/projects/hattrick-login
-docker compose run --rm keepalive
+./deploy/hassvm-run.sh --keepalive --headless --debug
+
+# direct docker
+docker compose run --rm --user "$(id -u):$(id -g)" keepalive --keepalive --headless --debug
 
 # logs
 journalctl --user -u hattrick-keepalive.service -n 50
 tail -f ~/.local/share/hattrick-login/cron.log
+tail -f ~/.hattrick-session/keepalive.jsonl
 ```

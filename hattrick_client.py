@@ -153,6 +153,10 @@ def build_chrome_options(user_data_dir: Path, headless: bool) -> uc.ChromeOption
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-setuid-sandbox")
+    if platform.system() == "Linux":
+        options.add_argument("--disable-gpu")
+        options.add_argument("--use-gl=angle")
+        options.add_argument("--use-angle=swiftshader")
     if headless:
         options.add_argument("--headless=new")
     return options

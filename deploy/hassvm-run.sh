@@ -30,57 +30,52 @@ ensure_chrome_libs() {
   rm -rf "${tmp}"
 }
 
-ensure_xvfb() {
-  if command -v xvfb-run >/dev/null 2>&1; then
-    return 0
-  fi
-  local root="${HOME}/lib/xvfb"
-  if [[ -x "${root}/usr/bin/xvfb-run" ]]; then
-    export PATH="${root}/usr/bin:${PATH}"
-    return 0
-  fi
-  mkdir -p "${root}"
-  local tmp
-  tmp="$(mktemp -d)"
-  (
-    cd "${tmp}"
-    apt-get download -o Dir::Cache="${tmp}" xvfb xauth >/dev/null
-    for deb in xvfb*.deb xauth*.deb; do
-      dpkg-deb -x "${deb}" "${root}/"
-    done
-  )
-  rm -rf "${tmp}"
-  export PATH="${root}/usr/bin:${PATH}"
-}
-
-ensure_chrome_libs
-
-if [[ -z "${DISPLAY:-}" && "${HATTRICK_USE_DOCKER:-}" == "1" && -f "${repo}/docker-compose.yml" ]] \
-  && command -v docker >/dev/null 2>&1; then
+run_native_with_xvfb() {
+  ensure_chrome_libs
+  export HATTRICK_CHROME_BINARY="${HATTRICK_CHROME_BINARY:-/usr/bin/chromium-browser}"
   cd "${repo}"
-  exec docker compose run --rm keepalive "$@"
-fi
 
-export HATTRICK_CHROME_BINARY="${HATTRICK_CHROME_BINARY:-/usr/bin/chromium-browser}"
-
-if [[ -z "${DISPLAY:-}" ]]; then
-  ensure_xvfb
-  args=()
+  local args=()
+  local arg
   for arg in "$@"; do
     if [[ "${arg}" == "--headless" ]]; then
       continue
     fi
     args+=("${arg}")
   done
-  has_keepalive=false
-  for arg in "${args[@]}"; do
-    [[ "${arg}" == "--keepalive" ]] && has_keepalive=true
-  done
-  if [[ "${has_keepalive}" == "true" ]]; then
-    exec xvfb-run -a "${repo}/run.sh" --keepalive --visible "${args[@]}"
+
+  mkdir -p /tmp/.X11-unix
+  chmod 1777 /tmp/.X11-unix 2>/dev/null || true
+  export DISPLAY=:99
+  if ! pgrep -f "Xvfb ${DISPLAY} " >/dev/null 2>&1; then
+    Xvfb "${DISPLAY}" -screen 0 1920x1080x24 -nolisten tcp &
+    for _ in $(seq 1 50); do
+      if [[ -S "/tmp/.X11-unix/X${DISPLAY#:}" ]]; then
+        break
+      fi
+      sleep 0.1
+    done
   fi
-  exec xvfb-run -a "${repo}/run.sh" "${args[@]}"
+
+  # Cloudflare blocks true headless; keep a real window under xvfb when Docker is unavailable.
+  exec ./run.sh --visible "${args[@]}"
+}
+
+# Real X display: native host Chromium (what worked with DISPLAY=windows-ip:0.0)
+if [[ -n "${DISPLAY:-}" ]]; then
+  ensure_chrome_libs
+  export HATTRICK_CHROME_BINARY="${HATTRICK_CHROME_BINARY:-/usr/bin/chromium-browser}"
+  cd "${repo}"
+  exec ./run.sh "$@"
 fi
 
-cd "${repo}"
-exec ./run.sh "$@"
+# No display: Docker Google Chrome under xvfb, running as host user for profile access
+if [[ -f "${repo}/docker-compose.yml" ]] && command -v docker >/dev/null 2>&1 \
+  && [[ "${HATTRICK_NATIVE:-}" != "1" ]]; then
+  cd "${repo}"
+  exec docker compose run --rm --user "$(id -u):$(id -g)" keepalive "$@"
+fi
+
+ensure_chrome_libs
+export HATTRICK_CHROME_BINARY="${HATTRICK_CHROME_BINARY:-/usr/bin/chromium-browser}"
+run_native_with_xvfb "$@"
