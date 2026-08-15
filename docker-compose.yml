@@ -1,0 +1,14 @@
+services:
+  keepalive:
+    build: .
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      HATTRICK_SESSION_DIR: /data/session
+    volumes:
+      - hattrick-session:/data/session
+    shm_size: "2gb"
+
+volumes:
+  hattrick-session:
