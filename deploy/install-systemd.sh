@@ -4,6 +4,10 @@ set -euo pipefail
 repo="${1:-$HOME/projects/hattrick-login}"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 
+if [[ -f "${repo}/.env" ]]; then
+  chmod 600 "${repo}/.env"
+fi
+
 mkdir -p "$unit_dir"
 
 sed "s|%h/projects/hattrick-login|${repo}|g" \

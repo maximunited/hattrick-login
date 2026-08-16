@@ -10,6 +10,7 @@ if [[ ! -f .env ]]; then
   echo "Missing ${repo}/.env — copy .env.example and edit credentials first." >&2
   exit 1
 fi
+chmod 600 .env
 
 if [[ ! -d venv ]]; then
   python3 -m venv venv
