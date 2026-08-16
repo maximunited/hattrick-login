@@ -7,7 +7,7 @@ After=network-online.target
 Type=oneshot
 WorkingDirectory=%h/projects/hattrick-login
 EnvironmentFile=-%h/projects/hattrick-login/.env
-ExecStart=%h/projects/hattrick-login/run.sh --keepalive --headless
+ExecStart=%h/projects/hattrick-login/deploy/hassvm-run.sh --keepalive --headless
 Nice=10
 
 [Install]

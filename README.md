@@ -87,7 +87,19 @@ Notifications fire on both success and failure unless you pass `--no-notify`.
 
 ## Automate every 2 weeks
 
-### systemd user timer (recommended)
+### hassvm (recommended)
+
+```bash
+git clone https://github.com/maximunited/hattrick-login ~/projects/hattrick-login
+cd ~/projects/hattrick-login
+cp .env.example .env
+# edit .env, seed profile once with --visible, then:
+./deploy/install-hassvm.sh
+```
+
+See [deploy/HASSVM.md](deploy/HASSVM.md) and [docs/deployment.md](docs/deployment.md).
+
+### Generic Linux (systemd user timer)
 
 ```bash
 git clone https://github.com/maximunited/hattrick-login ~/projects/hattrick-login

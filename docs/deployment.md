@@ -100,12 +100,24 @@ Requirements:
 
 ## systemd user timer
 
+### Generic Linux
+
 ```bash
 ./deploy/install-systemd.sh
 systemctl --user enable --now hattrick-keepalive.timer
 systemctl --user status hattrick-keepalive.timer
 journalctl --user -u hattrick-keepalive.service -n 50
 ```
+
+Uses `deploy/hassvm-run.sh` (Docker when `DISPLAY` is unset, native xvfb fallback).
+
+### hassvm
+
+```bash
+./deploy/install-hassvm.sh
+```
+
+Also installs a crontab safety net. See [deploy/HASSVM.md](../deploy/HASSVM.md).
 
 ## cron alternative
 
