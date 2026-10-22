@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 import requests
 import undetected_chromedriver as uc
@@ -27,8 +28,12 @@ LOGIN_URL = "https://www.hattrick.org/en-us/"
 DASHBOARD_URL = "https://www.hattrick.org/en-us/MyHattrick/"
 USERNAME_FIELD = "ctl00$CPContent$ucLogin$txtUserName"
 PASSWORD_FIELD = "ctl00$CPContent$ucLogin$txtPassword"
+MODERN_USERNAME_FIELD = "loginname"
+MODERN_PASSWORD_FIELD = "password"
 AUTH_FAILED_MARKER = "Authentication failed"
 CLOUDFLARE_TITLE = "Just a moment"
+MARKETING_TITLE_MARKER = "Join the free football world"
+LOGIN_LINK_TEXTS = ("Log In", "Log in", "Login")
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -96,10 +101,31 @@ def is_cloudflare_challenge(title: str, page_source: str) -> bool:
     return CLOUDFLARE_TITLE in title or "challenges.cloudflare.com" in page_source
 
 
+def is_cloudflare_cookie(name: str) -> bool:
+    lowered = name.lower()
+    return lowered.startswith("cf_") or lowered.startswith("__cf") or lowered == "_cfuvid"
+
+
+def clear_hattrick_auth_cookies(driver: WebDriver) -> int:
+    """Drop Hattrick session cookies while keeping Cloudflare clearance."""
+    removed = 0
+    for cookie in list(driver.get_cookies()):
+        name = cookie.get("name") or ""
+        if is_cloudflare_cookie(name):
+            continue
+        driver.delete_cookie(name)
+        removed += 1
+    return removed
+
+
 def is_logged_in_page(title: str, page_source: str, *, require_protected: bool = False) -> bool:
     if AUTH_FAILED_MARKER in page_source:
         return False
+    if MARKETING_TITLE_MARKER in title:
+        return False
     if USERNAME_FIELD.replace("$", "_") in page_source or 'name="ctl00$CPContent$ucLogin$txtUserName"' in page_source:
+        return False
+    if 'id="inputPassword"' in page_source and 'id="inputLoginname"' in page_source:
         return False
 
     protected_markers = ("MyHattrick/Dashboard", "/MyHattrick/", "Club/Finances")
@@ -200,6 +226,7 @@ def wait_for_login_form(
 ) -> bool:
     deadline = time.time() + timeout
     prompted = False
+    clicked_login = False
 
     while time.time() < deadline:
         title = driver.title
@@ -218,27 +245,147 @@ def wait_for_login_form(
             random_delay(1.0, 2.0)
             continue
 
-        if driver.find_elements(By.NAME, USERNAME_FIELD):
+        if login_form_ready(driver):
             return True
+
+        if not clicked_login:
+            clicked_login = click_login_entry(driver)
+            if clicked_login and debug:
+                print("Clicked Log In to reveal the login form")
 
         random_delay(0.5, 1.0)
 
     return False
 
 
-def submit_login_form(driver: WebDriver, username: str, password: str, debug: bool = False) -> LoginResult:
-    wait = WebDriverWait(driver, 30)
-    user_input = wait.until(EC.presence_of_element_located((By.NAME, USERNAME_FIELD)))
-    user_input.clear()
-    user_input.send_keys(username)
-    driver.find_element(By.NAME, PASSWORD_FIELD).clear()
-    driver.find_element(By.NAME, PASSWORD_FIELD).send_keys(password)
+def click_login_entry(driver: WebDriver) -> bool:
+    """Open the login form from the public marketing page if it is hidden."""
+    for text in LOGIN_LINK_TEXTS:
+        links = driver.find_elements(By.PARTIAL_LINK_TEXT, text)
+        if links:
+            links[0].click()
+            return True
+    return False
 
-    submit = driver.find_elements(By.CSS_SELECTOR, "input[type='submit']")
-    if not submit:
+
+def resolve_login_fields(driver: WebDriver) -> tuple[tuple[str, str], tuple[str, str]] | None:
+    if driver.find_elements(By.ID, "inputLoginname") and driver.find_elements(By.ID, "inputPassword"):
+        return (By.ID, "inputLoginname"), (By.ID, "inputPassword")
+    if driver.find_elements(By.NAME, USERNAME_FIELD):
+        return (By.NAME, USERNAME_FIELD), (By.NAME, PASSWORD_FIELD)
+    if driver.find_elements(By.NAME, MODERN_USERNAME_FIELD) and driver.find_elements(
+        By.NAME, MODERN_PASSWORD_FIELD
+    ):
+        return (By.NAME, MODERN_USERNAME_FIELD), (By.NAME, MODERN_PASSWORD_FIELD)
+    return None
+
+
+def login_form_ready(driver: WebDriver) -> bool:
+    return resolve_login_fields(driver) is not None
+
+
+def set_input_value(driver: WebDriver, element: object, value: str) -> None:
+    """Set an Angular input so ngModel sees the change."""
+    driver.execute_script(
+        "document.querySelectorAll('iframe, .video-wrapper').forEach("
+        "el => { el.style.visibility = 'hidden'; el.style.pointerEvents = 'none'; });"
+        "arguments[0].scrollIntoView({block: 'center'});"
+        "arguments[0].focus();",
+        element,
+    )
+    try:
+        element.click()
+        element.clear()
+        element.send_keys(value)
+        return
+    except Exception:  # noqa: BLE001 - fall back to the native value setter
+        pass
+    driver.execute_script(
+        """
+        const el = arguments[0];
+        const value = arguments[1];
+        el.focus();
+        const descriptor = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, 'value'
+        );
+        if (descriptor && descriptor.set) {
+            descriptor.set.call(el, value);
+        } else {
+            el.value = value;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
+        """,
+        element,
+        value,
+    )
+
+
+def find_login_submit(driver: WebDriver):
+    buttons = driver.find_elements(By.CSS_SELECTOR, "button.primary-button[type='submit']")
+    for button in buttons:
+        label = (button.text or "").strip().lower()
+        if label in {"log in", "login", "sign in"}:
+            return button
+    if buttons:
+        return buttons[0]
+    asp = driver.find_elements(By.ID, "ctl00_CPContent_ucUserAuthentication_btnAspLogin")
+    if asp:
+        return asp[0]
+    fallback = driver.find_elements(By.CSS_SELECTOR, "input[type='submit']")
+    return fallback[0] if fallback else None
+
+
+def click_element(driver: WebDriver, element: object) -> None:
+    try:
+        element.click()
+    except Exception:  # noqa: BLE001 - overlays often block native clicks
+        driver.execute_script("arguments[0].click();", element)
+
+
+def submit_login_form(driver: WebDriver, username: str, password: str, debug: bool = False) -> LoginResult:
+    fields = resolve_login_fields(driver)
+    if fields is None:
+        return LoginResult(False, "Login form fields not found")
+    user_loc, pass_loc = fields
+
+    wait = WebDriverWait(driver, 30)
+    user_input = wait.until(EC.presence_of_element_located(user_loc))
+    password_input = wait.until(EC.presence_of_element_located(pass_loc))
+    if user_loc[0] == By.ID:
+        set_input_value(driver, user_input, username)
+        set_input_value(driver, password_input, password)
+    else:
+        user_input.clear()
+        user_input.send_keys(username)
+        password_input.clear()
+        password_input.send_keys(password)
+
+    if debug:
+        lengths = driver.execute_script(
+            "const user = document.getElementById('inputLoginname');"
+            "const pw = document.getElementById('inputPassword');"
+            "return [user && user.value ? user.value.length : 0,"
+            " pw && pw.value ? pw.value.length : 0];"
+        )
+        if isinstance(lengths, (list, tuple)) and len(lengths) == 2:
+            print(f"Login field lengths before submit: user={lengths[0]} password={lengths[1]}")
+
+    submit = find_login_submit(driver)
+    if submit is None:
         return LoginResult(False, "Login submit button not found")
-    submit[0].click()
+    if debug:
+        print(
+            "Submit control:",
+            submit.get_attribute("id"),
+            submit.get_attribute("value"),
+            (submit.text or "").strip(),
+        )
+    click_element(driver, submit)
     random_delay(2.0, 4.0)
+    if debug:
+        print("After submit:", driver.current_url, driver.title)
 
     page_source = driver.page_source
     if AUTH_FAILED_MARKER in page_source:
@@ -275,6 +422,7 @@ def browser_login(
     headless: bool,
     debug: bool = False,
     prompt: Callable[[str], None] | None = None,
+    force_fresh_login: bool = False,
 ) -> tuple[WebDriver | None, LoginResult]:
     session_dir = get_session_dir()
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -290,9 +438,20 @@ def browser_login(
         driver.get(LOGIN_URL)
         random_delay(2.0, 4.0)
 
-        if is_logged_in_page(driver.title, driver.page_source):
+        already_logged_in = is_logged_in_page(driver.title, driver.page_source)
+        if already_logged_in and not force_fresh_login:
             verified = verify_logged_in(driver, debug=debug)
             return driver, verified
+
+        if already_logged_in and force_fresh_login:
+            removed = clear_hattrick_auth_cookies(driver)
+            if debug:
+                print(
+                    "Existing session detected; "
+                    f"cleared {removed} Hattrick cookie(s) for a fresh login."
+                )
+            driver.get(LOGIN_URL)
+            random_delay(2.0, 4.0)
 
         if not wait_for_login_form(
             driver,
@@ -314,11 +473,42 @@ def browser_login(
         return driver, LoginResult(False, f"Unexpected browser error: {exc}")
 
 
+def is_authenticated_dashboard_url(url: str) -> bool:
+    if "ReturnUrl=" in url:
+        return False
+    parsed = urlparse(url)
+    return parsed.netloc.endswith("hattrick.org") and "/MyHattrick/" in parsed.path
+
+
+def dashboard_url_for(driver: WebDriver) -> str:
+    raw = getattr(driver, "current_url", "") or ""
+    if not isinstance(raw, str):
+        return DASHBOARD_URL
+    parsed = urlparse(raw)
+    if parsed.netloc.endswith("hattrick.org"):
+        return f"{parsed.scheme}://{parsed.netloc}/MyHattrick/"
+    return DASHBOARD_URL
+
+
 def verify_logged_in(driver: WebDriver, debug: bool = False) -> LoginResult:
-    if debug:
-        print(f"Verifying session at {DASHBOARD_URL}")
-    driver.get(DASHBOARD_URL)
-    random_delay(2.0, 4.0)
+    if not is_authenticated_dashboard_url(driver.current_url):
+        target = dashboard_url_for(driver)
+        if debug:
+            print(f"Verifying session at {target}")
+        driver.get(target)
+        random_delay(2.0, 4.0)
+    elif debug:
+        print(f"Verifying session at {driver.current_url}")
+
+    if not is_authenticated_dashboard_url(driver.current_url):
+        if is_cloudflare_challenge(driver.title, driver.page_source):
+            return LoginResult(
+                False,
+                "Cloudflare challenge blocked dashboard access",
+                driver.current_url,
+                driver.title,
+            )
+        return LoginResult(False, "Not authenticated", driver.current_url, driver.title)
     if is_logged_in_page(driver.title, driver.page_source, require_protected=True):
         return LoginResult(True, "Login successful", driver.current_url, driver.title)
     if is_cloudflare_challenge(driver.title, driver.page_source):

@@ -66,7 +66,7 @@ For schedulers:
 python hattrick_login.py --keepalive --headless
 ```
 
-This logs in if needed, verifies `/MyHattrick/`, appends a line to `~/.hattrick-session/keepalive.jsonl`, and sends ntfy if configured.
+This clears any existing Hattrick session, submits a fresh login, verifies `/MyHattrick/`, appends a line to `~/.hattrick-session/keepalive.jsonl`, and sends ntfy if configured. Session reuse is skipped on purpose — Hattrick's inactivity clock only moves on a real login.
 
 ## ntfy.sh notifications
 

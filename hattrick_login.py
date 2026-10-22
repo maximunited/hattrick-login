@@ -13,6 +13,7 @@ from pathlib import Path
 from hattrick_client import (
     DASHBOARD_URL,
     configure_stdio,
+    dashboard_url_for,
     export_requests_session,
     fetch_page_with_browser,
     finances_url,
@@ -65,6 +66,7 @@ def run_login_flow(
     fetch: str | None,
     team_id: str | None,
     save_cookies: bool,
+    force_fresh_login: bool = False,
 ) -> int:
     username, password = get_credentials()
     if not username or not password:
@@ -78,6 +80,7 @@ def run_login_flow(
             password,
             headless=headless,
             debug=debug,
+            force_fresh_login=force_fresh_login,
         )
         print(result.message)
         if debug:
@@ -90,7 +93,8 @@ def run_login_flow(
             return EXIT_ERROR
 
         if fetch == "dashboard":
-            status, body = fetch_page_with_browser(driver, DASHBOARD_URL)
+            url = dashboard_url_for(driver)
+            status, body = fetch_page_with_browser(driver, url)
             print(f"Dashboard HTTP {status}")
             if status == 200 and ("/MyHattrick/" in body or "Dashboard" in body):
                 print("Dashboard fetch looks authenticated.")
@@ -137,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--keepalive",
         action="store_true",
-        help="Login and verify dashboard access (for schedulers)",
+        help="Force a fresh login, verify dashboard, and record keepalive (for schedulers)",
     )
     parser.add_argument(
         "--no-notify",
@@ -192,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         fetch=fetch,
         team_id=team_id,
         save_cookies=args.save_cookies,
+        force_fresh_login=args.keepalive,
     )
 
     message = {
