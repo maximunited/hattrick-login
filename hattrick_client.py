@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 import requests
 import undetected_chromedriver as uc
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
@@ -34,6 +34,7 @@ AUTH_FAILED_MARKER = "Authentication failed"
 CLOUDFLARE_TITLE = "Just a moment"
 MARKETING_TITLE_MARKER = "Join the free football world"
 LOGIN_LINK_TEXTS = ("Log In", "Log in", "Login")
+LOGOUT_LINK_TEXTS = ("Log out", "Logout", "Sign out")
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -74,7 +75,8 @@ def detect_chrome_version_main() -> int | None:
             )
             version, _ = winreg.QueryValueEx(key, "version")
             match = re.match(r"(\d+)\.", str(version))
-            return int(match.group(1)) if match else None
+            if match:
+                return int(match.group(1))
         for binary in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
             try:
                 output = subprocess.check_output(
@@ -261,17 +263,31 @@ def wait_for_login_form(
 def click_login_entry(driver: WebDriver) -> bool:
     """Open the login form from the public marketing page if it is hidden."""
     for text in LOGIN_LINK_TEXTS:
-        links = driver.find_elements(By.PARTIAL_LINK_TEXT, text)
-        if links:
-            links[0].click()
-            return True
+        for link in driver.find_elements(By.PARTIAL_LINK_TEXT, text):
+            try:
+                click_element(driver, link)
+                return True
+            except WebDriverException:
+                continue
+    return False
+
+
+def click_logout_entry(driver: WebDriver) -> bool:
+    """Best-effort logout when cookies alone do not end the Hattrick session."""
+    for text in LOGOUT_LINK_TEXTS:
+        for link in driver.find_elements(By.PARTIAL_LINK_TEXT, text):
+            try:
+                click_element(driver, link)
+                return True
+            except WebDriverException:
+                continue
     return False
 
 
 def resolve_login_fields(driver: WebDriver) -> tuple[tuple[str, str], tuple[str, str]] | None:
     if driver.find_elements(By.ID, "inputLoginname") and driver.find_elements(By.ID, "inputPassword"):
         return (By.ID, "inputLoginname"), (By.ID, "inputPassword")
-    if driver.find_elements(By.NAME, USERNAME_FIELD):
+    if driver.find_elements(By.NAME, USERNAME_FIELD) and driver.find_elements(By.NAME, PASSWORD_FIELD):
         return (By.NAME, USERNAME_FIELD), (By.NAME, PASSWORD_FIELD)
     if driver.find_elements(By.NAME, MODERN_USERNAME_FIELD) and driver.find_elements(
         By.NAME, MODERN_PASSWORD_FIELD
@@ -281,7 +297,20 @@ def resolve_login_fields(driver: WebDriver) -> tuple[tuple[str, str], tuple[str,
 
 
 def login_form_ready(driver: WebDriver) -> bool:
-    return resolve_login_fields(driver) is not None
+    fields = resolve_login_fields(driver)
+    if fields is None:
+        return False
+
+    for locator in fields:
+        elements = driver.find_elements(*locator)
+        if not elements:
+            return False
+        if not all(
+            getattr(element, "is_displayed", lambda: True)()
+            for element in elements
+        ):
+            return False
+    return True
 
 
 def set_input_value(driver: WebDriver, element: object, value: str) -> None:
@@ -443,15 +472,39 @@ def browser_login(
             verified = verify_logged_in(driver, debug=debug)
             return driver, verified
 
-        if already_logged_in and force_fresh_login:
+        if force_fresh_login:
             removed = clear_hattrick_auth_cookies(driver)
             if debug:
                 print(
-                    "Existing session detected; "
-                    f"cleared {removed} Hattrick cookie(s) for a fresh login."
+                    "Fresh login requested; "
+                    f"cleared {removed} Hattrick cookie(s)."
                 )
             driver.get(LOGIN_URL)
             random_delay(2.0, 4.0)
+
+            if is_logged_in_page(driver.title, driver.page_source):
+                if click_logout_entry(driver):
+                    if debug:
+                        print("Clicked logout after cookie clearing.")
+                    driver.get(LOGIN_URL)
+                    random_delay(2.0, 4.0)
+
+                if is_logged_in_page(driver.title, driver.page_source):
+                    # Give the site a short opportunity to present the login form,
+                    # but do not spend the full form timeout if the session persists.
+                    if not wait_for_login_form(
+                        driver,
+                        timeout=15,
+                        visible=not headless,
+                        debug=debug,
+                        prompt=prompt,
+                    ):
+                        return driver, LoginResult(
+                            False,
+                            "Existing session could not be cleared for fresh login",
+                            driver.current_url,
+                            driver.title,
+                        )
 
         if not wait_for_login_form(
             driver,
@@ -473,21 +526,23 @@ def browser_login(
         return driver, LoginResult(False, f"Unexpected browser error: {exc}")
 
 
+def is_hattrick_host(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host == "hattrick.org" or host.endswith(".hattrick.org")
+
+
 def is_authenticated_dashboard_url(url: str) -> bool:
     if "ReturnUrl=" in url:
         return False
-    parsed = urlparse(url)
-    return parsed.netloc.endswith("hattrick.org") and "/MyHattrick/" in parsed.path
+    return is_hattrick_host(url) and "/MyHattrick/" in urlparse(url).path
 
 
 def dashboard_url_for(driver: WebDriver) -> str:
     raw = getattr(driver, "current_url", "") or ""
-    if not isinstance(raw, str):
+    if not isinstance(raw, str) or not is_hattrick_host(raw):
         return DASHBOARD_URL
     parsed = urlparse(raw)
-    if parsed.netloc.endswith("hattrick.org"):
-        return f"{parsed.scheme}://{parsed.netloc}/MyHattrick/"
-    return DASHBOARD_URL
+    return f"{parsed.scheme}://{parsed.netloc}/MyHattrick/"
 
 
 def verify_logged_in(driver: WebDriver, debug: bool = False) -> LoginResult:
