@@ -25,7 +25,7 @@ from hattrick_client import (
     is_first_run,
     is_logged_in_page,
 )
-from tests.conftest import FakeDriver
+from tests.conftest import FakeDriver, FakeElement
 
 
 def test_cloudflare_detection():
@@ -50,6 +50,18 @@ def test_cloudflare_detection():
         ),
         ("Dashboard", "<html>Logout but ucLogin form</html>", False, False),
         ("Dashboard", "<html>Logout only</html>", True, False),
+        (
+            "Hattrick",
+            '<html><input id="inputLoginname" name="loginname"><input id="inputPassword" name="password"></html>',
+            False,
+            False,
+        ),
+        (
+            "Hattrick Football Manager Game | Join the free football world",
+            "<html>/MyHattrick/</html>",
+            True,
+            False,
+        ),
     ],
 )
 def test_logged_in_detection(title, page_source, require_protected, expected):
@@ -255,9 +267,35 @@ def test_start_browser(monkeypatch, tmp_path):
     assert kwargs["browser_executable_path"] == "/usr/bin/chrome"
 
 
+def test_wait_for_login_form_clicks_log_in_link(fake_driver, monkeypatch):
+    times = iter([0, 1, 2, 3, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+
+    link = fake_driver.add_partial_link("Log In")
+    original_click = link.click
+
+    def click_and_reveal() -> None:
+        original_click()
+        fake_driver.add_id_element("inputLoginname")
+        fake_driver.add_id_element("inputPassword")
+
+    link.click = click_and_reveal  # type: ignore[method-assign]
+
+    assert client.wait_for_login_form(
+        fake_driver,
+        timeout=5,
+        visible=False,
+        debug=False,
+    )
+    assert link.clicked
+
+
 def test_wait_for_login_form_finds_username(fake_driver, monkeypatch):
     fake_driver.add_name_element(USERNAME_FIELD)
-    monkeypatch.setattr(client.time, "time", lambda: 0)
+    fake_driver.add_name_element(PASSWORD_FIELD)
+    times = iter([0, 1, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
     monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
     assert client.wait_for_login_form(
         fake_driver,
@@ -301,6 +339,7 @@ def test_wait_for_login_form_cloudflare_with_prompt(fake_driver, monkeypatch):
         fake_driver.title = "Login"
         fake_driver.page_source = "<html>login</html>"
         fake_driver.add_name_element(USERNAME_FIELD)
+        fake_driver.add_name_element(PASSWORD_FIELD)
 
     assert client.wait_for_login_form(
         fake_driver,
@@ -371,8 +410,13 @@ def test_submit_login_form_timeout(fake_driver, monkeypatch):
     monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
 
     user_element = fake_driver._elements_by_name[USERNAME_FIELD][0]
+    password_element = fake_driver._elements_by_name[PASSWORD_FIELD][0]
     with patch("hattrick_client.WebDriverWait") as wait_cls:
-        wait_cls.return_value.until.side_effect = [user_element, TimeoutException("timeout")]
+        wait_cls.return_value.until.side_effect = [
+            user_element,
+            password_element,
+            TimeoutException("timeout"),
+        ]
         result = client.submit_login_form(fake_driver, "user", "pass")
 
     assert result.message == "Login result unclear after submit"
@@ -426,13 +470,39 @@ def test_submit_login_form_unclear_after_wait(fake_driver, monkeypatch):
     assert result.message == "Login result unclear"
 
 
+def test_dashboard_url_for_uses_shard_host(fake_driver):
+    fake_driver.current_url = "https://www83.hattrick.org/MyHattrick/Office/"
+    assert client.dashboard_url_for(fake_driver) == "https://www83.hattrick.org/MyHattrick/"
+
+
+def test_verify_logged_in_keeps_shard_host(fake_driver, monkeypatch):
+    fake_driver.current_url = "https://www83.hattrick.org/MyHattrick/Office/"
+    fake_driver.page_source = "<html>/MyHattrick/Dashboard Logout</html>"
+    fake_driver.title = "My office » Hattrick"
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    result = client.verify_logged_in(fake_driver)
+    assert result.ok is True
+    assert fake_driver.get_urls == []
+
+
 def test_verify_logged_in_success(fake_driver, monkeypatch):
     fake_driver.page_source = "<html>/MyHattrick/Dashboard</html>"
     monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
 
     result = client.verify_logged_in(fake_driver, debug=True)
     assert result.ok is True
-    assert fake_driver.get_urls == [DASHBOARD_URL]
+    assert fake_driver.get_urls == ["https://www.hattrick.org/MyHattrick/"]
+
+
+def test_verify_logged_in_rejects_login_redirect(fake_driver, monkeypatch):
+    fake_driver.page_source = "<html>/MyHattrick/</html>"
+    fake_driver.title = "Hattrick Football Manager Game | Join the free football world"
+    fake_driver.redirect_to = "https://www.hattrick.org/en-us/?ReturnUrl=%2fen-us%2fMyHattrick%2f"
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+
+    result = client.verify_logged_in(fake_driver)
+    assert result.ok is False
+    assert result.message == "Not authenticated"
 
 
 def test_verify_logged_in_cloudflare(fake_driver, monkeypatch):
@@ -515,6 +585,117 @@ def test_browser_login_start_failure(monkeypatch, session_dir):
     assert "Failed to start Chrome" in result.message
 
 
+def test_wait_for_login_form_ready_with_modern_fields(fake_driver, monkeypatch):
+    times = iter([0, 1, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    fake_driver.add_id_element("inputLoginname")
+    fake_driver.add_id_element("inputPassword")
+    assert client.wait_for_login_form(
+        fake_driver,
+        timeout=5,
+        visible=False,
+        debug=False,
+    )
+
+
+def test_submit_login_form_modern_fields(fake_driver, monkeypatch):
+    user_field = fake_driver.add_id_element("inputLoginname")
+    password_field = fake_driver.add_id_element("inputPassword")
+    fake_driver.add_submit_button()
+    fake_driver.page_source = "<html>/MyHattrick/Dashboard Logout</html>"
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        client,
+        "verify_logged_in",
+        lambda driver, debug=False: LoginResult(True, "Login successful", driver.current_url, driver.title),
+    )
+
+    result = client.submit_login_form(fake_driver, "user", "pass", debug=True)
+    assert result.ok is True
+    assert user_field.keys == ["user"]
+    assert password_field.keys == ["pass"]
+
+
+def test_find_login_submit_prefers_angular_button(fake_driver):
+    fake_driver.add_id_element("ctl00_CPContent_ucUserAuthentication_btnAspLogin")
+    button = FakeElement()
+    button.tag_name = "button"
+    button.text = "LOG IN"
+    fake_driver._elements_by_css["button.primary-button[type='submit']"] = [button]
+    assert client.find_login_submit(fake_driver) is button
+
+
+def test_set_input_value_types_natively_when_possible():
+    element = FakeElement()
+    driver = MagicMock()
+    client.set_input_value(driver, element, "hello")
+    assert element.keys == ["hello"]
+    assert element.clicked is True
+
+
+def test_is_cloudflare_cookie():
+    assert client.is_cloudflare_cookie("cf_clearance") is True
+    assert client.is_cloudflare_cookie("__cf_bm") is True
+    assert client.is_cloudflare_cookie("_cfuvid") is True
+    assert client.is_cloudflare_cookie("cf_chl_rc_i") is True
+    assert client.is_cloudflare_cookie("ASP.NET_SessionId") is False
+    assert client.is_cloudflare_cookie(".ASPXAUTH") is False
+
+
+def test_clear_hattrick_auth_cookies_keeps_cloudflare(fake_driver):
+    fake_driver.cookies = [
+        {"name": "cf_clearance", "value": "cf"},
+        {"name": "__cf_bm", "value": "bot"},
+        {"name": "ASP.NET_SessionId", "value": "sess"},
+        {"name": ".ASPXAUTH", "value": "auth"},
+    ]
+    removed = client.clear_hattrick_auth_cookies(fake_driver)
+    names = {cookie["name"] for cookie in fake_driver.cookies}
+    assert removed == 2
+    assert names == {"cf_clearance", "__cf_bm"}
+
+
+def test_browser_login_force_fresh_login_submits_form_when_session_exists(monkeypatch, session_dir):
+    fake_driver = FakeDriver(
+        page_source="<html>/MyHattrick/ Logout</html>",
+        cookies=[
+            {"name": "cf_clearance", "value": "cf"},
+            {"name": "ASP.NET_SessionId", "value": "sess"},
+        ],
+    )
+    submitted: list[bool] = []
+
+    def fake_submit(*args, **kwargs):
+        submitted.append(True)
+        return LoginResult(True, "Login successful")
+
+    monkeypatch.setattr(client, "start_browser", lambda *args, **kwargs: fake_driver)
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(client, "wait_for_login_form", lambda *args, **kwargs: True)
+    monkeypatch.setattr(client, "submit_login_form", fake_submit)
+    monkeypatch.setattr(
+        client,
+        "verify_logged_in",
+        lambda driver, debug=False: LoginResult(True, "skipped-session"),
+    )
+
+    driver, result = client.browser_login(
+        "user",
+        "pass",
+        headless=True,
+        debug=True,
+        force_fresh_login=True,
+    )
+    assert driver is fake_driver
+    assert submitted == [True]
+    assert result.message == "Login successful"
+    assert fake_driver.get_urls == [LOGIN_URL, LOGIN_URL]
+    names = {cookie["name"] for cookie in fake_driver.cookies}
+    assert "cf_clearance" in names
+    assert "ASP.NET_SessionId" not in names
+
+
 def test_browser_login_already_logged_in(monkeypatch, session_dir):
     fake_driver = FakeDriver(page_source="<html>/MyHattrick/ Logout</html>")
     monkeypatch.setattr(client, "start_browser", lambda *args, **kwargs: fake_driver)
@@ -584,3 +765,48 @@ def test_configure_stdio_without_reconfigure(monkeypatch):
     monkeypatch.setattr(client.sys, "stdout", object())
     monkeypatch.setattr(client.sys, "stderr", object())
     client.configure_stdio()
+
+
+def test_wait_for_login_form_incomplete_pair_times_out(fake_driver, monkeypatch):
+    fake_driver.add_name_element(USERNAME_FIELD)
+    times = iter([0, 1, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    assert not client.wait_for_login_form(
+        fake_driver, timeout=5, visible=False, debug=False
+    )
+
+
+def test_resolve_login_fields_skips_hidden_modern_pair(fake_driver, monkeypatch):
+    for field_id in ("inputLoginname", "inputPassword"):
+        element = fake_driver.add_id_element(field_id)
+        monkeypatch.setattr(element, "is_displayed", lambda: False)
+    fake_driver.add_name_element(USERNAME_FIELD)
+    fake_driver.add_name_element(PASSWORD_FIELD)
+    assert client.resolve_login_fields(fake_driver) == (
+        (By.NAME, USERNAME_FIELD), (By.NAME, PASSWORD_FIELD)
+    )
+    assert client.login_form_ready(fake_driver)
+
+
+def test_wait_for_login_form_reveals_hidden_inputs(fake_driver, monkeypatch):
+    fields = [fake_driver.add_id_element(field_id)
+              for field_id in ("inputLoginname", "inputPassword")]
+    visible = [False]
+    for element in fields:
+        monkeypatch.setattr(element, "is_displayed", lambda: visible[0])
+    link = fake_driver.add_partial_link("Log In")
+    original_click = link.click
+
+    def reveal():
+        original_click()
+        visible[0] = True
+
+    monkeypatch.setattr(link, "click", reveal)
+    times = iter([0, 1, 2, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    assert client.wait_for_login_form(
+        fake_driver, timeout=5, visible=False, debug=False
+    )
+    assert link.clicked

@@ -19,9 +19,9 @@ legacy/*            Obsolete requests-only scripts (reference only)
 1. Load credentials from the environment (`.env` locally, env vars in Docker/systemd).
 2. Open Chrome through `undetected-chromedriver` with a persistent profile in `HATTRICK_SESSION_DIR` (default `~/.hattrick-session`).
 3. Navigate to `https://www.hattrick.org/en-us/`.
-4. If already authenticated, skip the login form and verify the dashboard.
-5. If Cloudflare appears, a visible browser run lets you clear the challenge once; later runs reuse cookies from the saved profile.
-6. Submit the Hattrick login form when needed.
+4. If already authenticated and this is not keepalive, skip the login form and verify the dashboard.
+5. Keepalive always performs a fresh login: drop Hattrick session cookies (keep Cloudflare clearance), reload, open the login form (the public homepage hides it behind **Log In**), and submit credentials. Cookie reuse does not update Hattrick's last-login timestamp.
+6. If Cloudflare appears, a visible browser run lets you clear the challenge once; later runs reuse cookies from the saved profile.
 7. Verify `https://www.hattrick.org/en-us/MyHattrick/` contains protected content.
 8. Optionally fetch additional pages (`--fetch`) or export cookies (`--save-cookies`).
 
@@ -29,7 +29,8 @@ legacy/*            Obsolete requests-only scripts (reference only)
 
 `--keepalive` is the scheduler-facing path:
 
-- Forces dashboard verification after login
+- Clears Hattrick auth cookies and submits the login form so the site records a login
+- Forces dashboard verification after that login
 - Appends one JSON line to `keepalive.jsonl`
 - Sends ntfy success/failure notifications unless `--no-notify` is set
 

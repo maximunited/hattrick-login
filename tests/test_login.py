@@ -68,6 +68,32 @@ def test_run_login_flow_needs_human(monkeypatch):
     driver.quit.assert_called_once()
 
 
+def test_run_login_flow_passes_force_fresh_login(monkeypatch):
+    driver = MagicMock()
+    captured: dict[str, object] = {}
+
+    def fake_browser_login(*args, **kwargs):
+        captured.update(kwargs)
+        return driver, LoginResult(True, "Login successful")
+
+    monkeypatch.setattr(login, "get_credentials", lambda: ("user", "pass"))
+    monkeypatch.setattr(login, "browser_login", fake_browser_login)
+
+    assert (
+        login.run_login_flow(
+            headless=True,
+            debug=False,
+            fetch=None,
+            team_id=None,
+            save_cookies=False,
+            force_fresh_login=True,
+        )
+        == login.EXIT_OK
+    )
+    assert captured["force_fresh_login"] is True
+    driver.quit.assert_called_once()
+
+
 def test_run_login_flow_dashboard_fetch_success(monkeypatch, session_dir):
     driver = MagicMock()
     monkeypatch.setattr(login, "get_credentials", lambda: ("user", "pass"))
@@ -163,6 +189,42 @@ def test_main_first_run_defaults_visible(session_dir, monkeypatch, capsys):
     assert login.main([]) == login.EXIT_OK
     output = capsys.readouterr().out
     assert "First run detected" in output
+
+
+def test_main_keepalive_forces_fresh_login(session_dir, monkeypatch):
+    cookie_path = session_dir / "Default" / "Network" / "Cookies"
+    cookie_path.parent.mkdir(parents=True)
+    cookie_path.write_text("x", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def capture(**kwargs):
+        captured.update(kwargs)
+        return login.EXIT_OK
+
+    monkeypatch.setattr(login, "get_session_dir", lambda: session_dir)
+    monkeypatch.setattr(login, "run_login_flow", capture)
+
+    assert login.main(["--keepalive", "--no-notify"]) == login.EXIT_OK
+    assert captured["force_fresh_login"] is True
+
+
+def test_main_without_keepalive_does_not_force_fresh_login(session_dir, monkeypatch):
+    cookie_path = session_dir / "Default" / "Network" / "Cookies"
+    cookie_path.parent.mkdir(parents=True)
+    cookie_path.write_text("x", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def capture(**kwargs):
+        captured.update(kwargs)
+        return login.EXIT_OK
+
+    monkeypatch.setattr(login, "get_session_dir", lambda: session_dir)
+    monkeypatch.setattr(login, "run_login_flow", capture)
+
+    assert login.main(["--headless", "--no-notify"]) == login.EXIT_OK
+    assert captured["force_fresh_login"] is False
 
 
 def test_main_keepalive_records_and_notifies(session_dir, monkeypatch):

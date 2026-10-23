@@ -24,7 +24,7 @@ Legacy aliases `NTFY_TOPIC`, `NTFY_SERVER`, and `NTFY_TOKEN` are still accepted.
 | ---- | ------ |
 | `--visible` | Force a visible browser window |
 | `--headless` | Force headless Chrome (may fail against Cloudflare) |
-| `--keepalive` | Login, verify dashboard, write `keepalive.jsonl`, notify |
+| `--keepalive` | Fresh login (not session reuse), verify dashboard, write `keepalive.jsonl`, notify |
 | `--debug` | Verbose logging |
 | `--fetch dashboard` | Fetch dashboard HTML after login |
 | `--fetch finances` | Fetch finances page (`--team-id` or `HATTRICK_TEAM_ID`) |
