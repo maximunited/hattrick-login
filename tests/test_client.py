@@ -293,7 +293,9 @@ def test_wait_for_login_form_clicks_log_in_link(fake_driver, monkeypatch):
 
 def test_wait_for_login_form_finds_username(fake_driver, monkeypatch):
     fake_driver.add_name_element(USERNAME_FIELD)
-    monkeypatch.setattr(client.time, "time", lambda: 0)
+    fake_driver.add_name_element(PASSWORD_FIELD)
+    times = iter([0, 1, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
     monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
     assert client.wait_for_login_form(
         fake_driver,
@@ -337,6 +339,7 @@ def test_wait_for_login_form_cloudflare_with_prompt(fake_driver, monkeypatch):
         fake_driver.title = "Login"
         fake_driver.page_source = "<html>login</html>"
         fake_driver.add_name_element(USERNAME_FIELD)
+        fake_driver.add_name_element(PASSWORD_FIELD)
 
     assert client.wait_for_login_form(
         fake_driver,
@@ -762,3 +765,48 @@ def test_configure_stdio_without_reconfigure(monkeypatch):
     monkeypatch.setattr(client.sys, "stdout", object())
     monkeypatch.setattr(client.sys, "stderr", object())
     client.configure_stdio()
+
+
+def test_wait_for_login_form_incomplete_pair_times_out(fake_driver, monkeypatch):
+    fake_driver.add_name_element(USERNAME_FIELD)
+    times = iter([0, 1, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    assert not client.wait_for_login_form(
+        fake_driver, timeout=5, visible=False, debug=False
+    )
+
+
+def test_resolve_login_fields_skips_hidden_modern_pair(fake_driver, monkeypatch):
+    for field_id in ("inputLoginname", "inputPassword"):
+        element = fake_driver.add_id_element(field_id)
+        monkeypatch.setattr(element, "is_displayed", lambda: False)
+    fake_driver.add_name_element(USERNAME_FIELD)
+    fake_driver.add_name_element(PASSWORD_FIELD)
+    assert client.resolve_login_fields(fake_driver) == (
+        (By.NAME, USERNAME_FIELD), (By.NAME, PASSWORD_FIELD)
+    )
+    assert client.login_form_ready(fake_driver)
+
+
+def test_wait_for_login_form_reveals_hidden_inputs(fake_driver, monkeypatch):
+    fields = [fake_driver.add_id_element(field_id)
+              for field_id in ("inputLoginname", "inputPassword")]
+    visible = [False]
+    for element in fields:
+        monkeypatch.setattr(element, "is_displayed", lambda: visible[0])
+    link = fake_driver.add_partial_link("Log In")
+    original_click = link.click
+
+    def reveal():
+        original_click()
+        visible[0] = True
+
+    monkeypatch.setattr(link, "click", reveal)
+    times = iter([0, 1, 2, 100])
+    monkeypatch.setattr(client.time, "time", lambda: next(times))
+    monkeypatch.setattr(client, "random_delay", lambda *args, **kwargs: None)
+    assert client.wait_for_login_form(
+        fake_driver, timeout=5, visible=False, debug=False
+    )
+    assert link.clicked
