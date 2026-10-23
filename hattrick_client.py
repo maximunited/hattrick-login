@@ -284,33 +284,31 @@ def click_logout_entry(driver: WebDriver) -> bool:
     return False
 
 
+def visible_elements(driver: WebDriver, locator: tuple[str, str]) -> list[object]:
+    elements = driver.find_elements(*locator)
+    if not elements:
+        return []
+    return [
+        element
+        for element in elements
+        if getattr(element, "is_displayed", lambda: True)()
+    ]
+
+
 def resolve_login_fields(driver: WebDriver) -> tuple[tuple[str, str], tuple[str, str]] | None:
-    if driver.find_elements(By.ID, "inputLoginname") and driver.find_elements(By.ID, "inputPassword"):
-        return (By.ID, "inputLoginname"), (By.ID, "inputPassword")
-    if driver.find_elements(By.NAME, USERNAME_FIELD) and driver.find_elements(By.NAME, PASSWORD_FIELD):
-        return (By.NAME, USERNAME_FIELD), (By.NAME, PASSWORD_FIELD)
-    if driver.find_elements(By.NAME, MODERN_USERNAME_FIELD) and driver.find_elements(
-        By.NAME, MODERN_PASSWORD_FIELD
-    ):
-        return (By.NAME, MODERN_USERNAME_FIELD), (By.NAME, MODERN_PASSWORD_FIELD)
+    candidates = (
+        ((By.ID, "inputLoginname"), (By.ID, "inputPassword")),
+        ((By.NAME, USERNAME_FIELD), (By.NAME, PASSWORD_FIELD)),
+        ((By.NAME, MODERN_USERNAME_FIELD), (By.NAME, MODERN_PASSWORD_FIELD)),
+    )
+    for user_locator, password_locator in candidates:
+        if visible_elements(driver, user_locator) and visible_elements(driver, password_locator):
+            return user_locator, password_locator
     return None
 
 
 def login_form_ready(driver: WebDriver) -> bool:
-    fields = resolve_login_fields(driver)
-    if fields is None:
-        return False
-
-    for locator in fields:
-        elements = driver.find_elements(*locator)
-        if not elements:
-            return False
-        if not all(
-            getattr(element, "is_displayed", lambda: True)()
-            for element in elements
-        ):
-            return False
-    return True
+    return resolve_login_fields(driver) is not None
 
 
 def set_input_value(driver: WebDriver, element: object, value: str) -> None:
